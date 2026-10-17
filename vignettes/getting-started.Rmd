@@ -1,0 +1,171 @@
+---
+title: "Getting started with CompetingRiskRPackage"
+output:
+  rmarkdown::pdf_document:
+    toc: false
+    number_sections: false
+    latex_engine: pdflatex
+    fig_crop: false
+fontsize: 10pt
+geometry: margin=0.8in
+header-includes:
+  - \usepackage{float}
+  - \setlength{\parskip}{4pt}
+vignette: >
+  %\VignetteIndexEntry{Getting started with CompetingRiskRPackage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse=TRUE, comment="#>", message=FALSE,
+                     fig.align="center", fig.pos="H", dev="pdf")
+options(width=78, digits=4)
+```
+
+## 1. Data and a multivariable fit
+
+**CompetingRiskRPackage** fits weighted Fine-Gray proportional subdistribution
+hazards models for case-cohort competing-risk data. A single fit provides coefficient estimates and three proportionality diagnostics: **cor**, **rank cor** and **reg**.
+
+The example uses a supplied synthetic dataset of 4,000 subjects. A two-level factor is added to demonstrate fitting continuous and categorical covariates together.
+
+```{r data}
+library(CompetingRiskRPackage)
+dat <- read.csv(system.file("extdata", "example_ph_4000.csv",
+                            package = "CompetingRiskRPackage"))
+set.seed(2026)
+dat$group <- factor(sample(c("A", "B"), nrow(dat), replace = TRUE))
+dat$id <- seq_len(nrow(dat))
+head(dat, 3)
+```
+
+The input data must contain one row per full-cohort subject, including subjects with unmeasured covariates. Specify the following columns:
+
+* `time`: finite, non-negative observed follow-up time.
+* `status`: 0 for censoring; positive integers identify event causes. Here,
+  1 is the target event and 2 is the competing event.
+* `subcohort`: 1 (or `TRUE`) for random subcohort membership, 0 otherwise.
+  Subcohort membership is specified independently of covariate measurement availability.
+
+Specify all covariates in a single one-sided formula. Categorical covariates use R's model-matrix contrasts, and the model intercept is omitted. Here, `groupB` represents level B relative to reference level A.
+
+```{r fit}
+fit <- cc_fit(~ . - id, data = dat,
+              time = "time", status = "status", subcohort = "subcohort",
+              cause = 1)
+c(cohort = fit$n, target_events = fit$n_events,
+  subcohort = fit$n_subcohort)
+summary(fit)$coefficients
+```
+
+`summary(fit)$coefficients` reports adjusted coefficient estimates, sandwich standard errors (`SE_sandwich`) and information-based standard errors (`SE_information`).
+
+The current implementation supports unstratified random subcohort sampling with time-fixed covariates; it does not support stratified sampling, delayed entry or time-varying covariates.
+
+\newpage
+
+## 2. Results and fitting all covariates
+
+```{r tests}
+fit$tests[, c("method", "covariate", "statistic", "df", "p.value", "status")]
+```
+
+The **cor** and **rank cor** diagnostics correlate each residual column with event time and ranked event time, respectively. Rank cor uses average ranks for tied times and leaves residuals unranked. Their p values use Student t reference distributions.
+**reg** is a nuisance-adjusted score test using a chi-squared reference
+distribution; the default time function is `function(t) t`.
+
+The `GLOBAL` reg row reports the joint test across all coefficients, with 2 degrees of freedom in this example. Additional rows report coefficient-specific tests. Categorical covariates are reported by their expanded coefficients; a separate joint test for each categorical covariate is not provided.
+
+The reported p values test the proportionality assumption for the corresponding covariate or coefficient set. 
+`summary(fit)` combines coefficient estimates, diagnostics and fit status.
+
+**Including all covariates.** Use `~ .` to include all columns except those specified by `time`, `status` and `subcohort`. The formula `~ . - id` additionally excludes the subject identifier.
+Additional columns can be excluded using formula subtraction, for example `~ . - id - visit`. An explicit covariate formula gives the same fit:
+
+```{r named-covariates}
+fit_named <- cc_fit(~ covariate1 + group, dat, "time", "status", "subcohort")
+isTRUE(all.equal(coef(fit), coef(fit_named)))
+```
+
+**Selecting residual plots.** `plot(fit)` displays residual plots for all coefficients. Use `covariates` to select variables or expanded coefficients:
+
+```{r selected-plots, fig.show='hide'}
+plots <- plot(fit, covariates = c("covariate1", "group"))
+names(plots)
+```
+
+Plot selection preserves the fitted model and its covariate adjustment.
+A factor name selects all its non-reference coefficients; an expanded name,
+such as `"groupB"`, selects just that coefficient. The method invisibly returns a named list of plot objects. Display an individual plot with `plots[["covariate1"]]`.
+
+\newpage
+
+## 3. Residual plots from multivariable models
+
+The following example compares two synthetic datasets of 4,000 subjects. The first has constant covariate effects; the second has a time-varying effect for `covariate1`. Both models include `covariate1` and `group`.
+
+```{r comparison-fit}
+nonph <- read.csv(system.file("extdata", "example_nonph_4000.csv",
+                              package = "CompetingRiskRPackage"))
+nonph$group <- dat$group
+nonph$id <- dat$id
+fit_nonph <- cc_fit(~ . - id, nonph,
+                    "time", "status", "subcohort")
+```
+
+Select `covariate1` to display its residual plot from each multivariable fit, adjusted for `group`. The two plots are arranged side by side below:
+
+```{r residual-plot, fig.width=3.2, fig.height=3.2, out.width='49%', fig.show='hold'}
+plot(fit, covariates = "covariate1")
+plot(fit_nonph, covariates = "covariate1")
+```
+
+**PH-generated data (left) and non-PH-generated data (right).** Each panel displays the `covariate1` residuals against target-event time, with a horizontal reference at zero and a LOESS smooth. Axis limits are determined separately for each plot.
+
+Use `plot(fit, covariates = "group")` to display the factor's residual plots, or `plot(fit)` to display all coefficient plots.
+
+\newpage
+
+## 4. Additional options and result extraction
+
+**Time transformation.** Set `time_transform` to specify the time function used by reg. The example below uses a quadratic function; cor and rank cor are unchanged.
+
+```{r quadratic}
+fit_quad <- cc_fit(~ . - id, dat, "time", "status", "subcohort",
+                   time_transform = function(t) t^2)
+fit_quad$tests[fit_quad$tests$method == "reg",
+               c("covariate", "statistic", "df", "p.value", "status")]
+```
+
+**Missing covariates.** Covariates are required for subcohort members and target-event cases. Missing values are permitted for other subjects, whose follow-up and status must remain in the dataset. The example below introduces permitted missing values and reproduces the coefficient estimates:
+
+```{r missing}
+dat_missing <- dat
+unrequired <- dat$status != 1 & dat$subcohort == 0
+dat_missing[unrequired, c("covariate1", "group")] <- NA
+fit_missing <- cc_fit(~ . - id, dat_missing, "time", "status", "subcohort")
+isTRUE(all.equal(coef(fit), coef(fit_missing)))
+```
+
+**Result extraction.** `coef()` returns coefficient estimates, `vcov()` returns the complete sandwich covariance matrix, and `residuals()` returns a matrix with one column per coefficient:
+
+```{r extraction}
+b <- coef(fit)
+V <- vcov(fit)
+r_full <- residuals(fit)                 # All rows; NA on non-target rows
+r_event <- residuals(fit, type = "event") # Target events in input order
+dim(V)
+dim(r_full)
+c(converged = fit$converged, covariance_ok = fit$variance_status == "ok")
+```
+
+Full residuals preserve input row order, with `NA` for non-target-event rows. Event residuals correspond to `fit$event_index` and `fit$event_times`; tied events retain separate rows.
+
+**Fit status.** Check `fit$converged`, `fit$variance_status`, and the `status` and `message` columns in `fit$tests`. Unavailable inference is returned as `NA`; coefficient estimates and descriptive residuals may remain available after a covariance failure. A reg-specific failure does not necessarily affect cor or rank cor.
+
+**Further reading and versions.** See `?cc_fit` and `?cc_fit_methods` for the
+interface. Methodological background: Wogu et al., *Assessing the Proportional
+Hazards Assumption of Fine-Gray Model in Case-Cohort Studies* (manuscript).
+Rendered with CompetingRiskRPackage `r as.character(packageVersion("CompetingRiskRPackage"))`
+and R `r getRversion()`.

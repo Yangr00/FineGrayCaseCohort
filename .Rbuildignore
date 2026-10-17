@@ -1,0 +1,11 @@
+^CompetingRisk\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+^README\.Rmd$
+
+^CompetingRiskRPackage\.Rproj$
+^\.Rhistory$
+^\.Rprofile$
+
+^docs$
+^downloads$

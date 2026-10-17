@@ -1,0 +1,26 @@
+Package: CompetingRiskRPackage
+Title: Competing Risks Diagnostics for Case-Cohort Studies
+Version: 0.3.7
+Authors@R: 
+    person("Yang", "Ruan", role = c("aut", "cre"))
+Description: Fits weighted proportional subdistribution hazards models for
+    case-cohort data with competing risks. Provides sandwich covariance estimates,
+    event-indexed residuals, correlation diagnostics and nuisance-adjusted score
+    tests for time-varying effects, with censoring and subcohort corrections.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Suggests: 
+    testthat (>= 3.0.0),
+    survival,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Imports: 
+    Rcpp,
+    ggplot2,
+    stats
+LinkingTo: 
+    Rcpp
